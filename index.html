@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netin </title>
+    <meta name="robots" content="noindex">
+    <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
+    <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mpegts.js/dist/mpegts.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Firebase SDK Compatível -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/x-icon" href="https://www.google.com/favicon.ico">
+    <!-- Ícone de Usuário (Font Awesome para exemplo) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+</head>
+<body>
+    <!-- Tela de Login -->
+    <div id="login-container" class="login-container">
+        <div class="login-box">
+            <h2>Login</h2>
+            <div class="input-group">
+                <input type="email" id="email" class="login-input" placeholder="E-mail" autocomplete="email">
+            </div>
+            <div class="input-group">
+                <input type="password" id="password" class="login-input" placeholder="Senha" autocomplete="current-password">
+            </div>
+            <button id="sign-in-btn" class="login-btn">Entrar</button>
+            <button id="sign-up-btn" class="login-btn">Cadastrar</button>
+            <p id="login-message" class="login-message"></p>
+        </div>
+    </div>
+
+    <!-- Conteúdo Principal (Player) -->
+    <div id="main-app" class="container" style="display: none;">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Netin Canais</h2>
+                <button class="toggle-btn">☰</button>
+            </div>
+            <input type="text" id="search-bar" class="search-bar" placeholder="Pesquisar canais...">
+            <select id="channel-select" class="channel-select"></select>
+            <button id="sign-out-btn" class="sign-out-btn">Sair</button>
+        </div>
+        <div class="main-content">
+            <div class="video-container">
+                <video id="video_player" class="video-js" controls muted autoplay></video>
+                <div class="overlay-loading">Carregando...</div>
+                <div class="overlay-error"></div>
+            </div>
+        </div>
+        <!-- Ícone de Usuário no Canto Superior Direito -->
+        <div id="user-icon" class="user-icon">
+            <i class="fas fa-user"></i>
+        </div>
+        <!-- Página Interna de Perfil -->
+        <div id="profile-modal" class="profile-modal">
+            <div class="profile-modal-content">
+                <span id="close-modal" class="close-modal">&times;</span>
+                <div class="profile-section">
+                    <div class="profile-image">
+                        <img id="profile-photo" src="https://via.placeholder.com/100?text=Sem+Foto" alt="Foto de Perfil" class="profile-photo-img">
+                    </div>
+                    <div class="profile-info">
+                        <p><strong>Nome:</strong> <span id="profile-name">Carregando...</span></p>
+                        <p><strong>E-mail:</strong> <span id="profile-email">Carregando...</span></p>
+                    </div>
+                    <input type="file" id="upload-photo" accept="image/*" class="upload-input">
+                    <button id="save-photo-btn" class="login-btn" style="width: 100%; margin-top: 10px;">Salvar Foto</button>
+                    <p id="upload-message" class="login-message"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="channels.js"></script>
+    <script>
+        // Verifica se firebase está disponível
+        if (typeof firebase === 'undefined') {
+            console.error('Firebase não foi carregado. Verifique se os scripts do Firebase estão sendo carregados corretamente.');
+        } else {
+            console.log('Firebase carregado com sucesso:', firebase);
+        }
+
+        // Configuração do Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyBQQh5buo7nW8Ab58uzT-tBA34RvW7strY",
+            authDomain: "iptv-site.firebaseapp.com",
+            projectId: "iptv-site",
+            storageBucket: "iptv-site.firebasestorage.app",
+            messagingSenderId: "505079252687",
+            appId: "1:505079252687:web:9a63866bd85c14989859ba",
+            measurementId: "G-12N85P72EL"
+        };
+
+        // Inicializa o Firebase
+        try {
+            firebase.initializeApp(firebaseConfig);
+            console.log('Firebase inicializado com sucesso');
+        } catch (error) {
+            console.error('Erro ao inicializar Firebase:', error);
+        }
+        const auth = firebase.auth();
+        const storage = firebase.storage();
+
+        $(document).ready(function() {
+            console.log('Documento pronto, jQuery carregado');
+            const player = videojs('video_player', {
+                controls: true,
+                muted: true,
+                autoplay: true
+            });
+            let playerInstance = null;
+
+            // Funções para mensagens
+            function showLoginMessage(message, isSuccess = false) {
+                const messageElement = $('#login-message');
+                if (messageElement.length) {
+                    messageElement.text(message);
+                    messageElement.removeClass('success error');
+                    messageElement.addClass(isSuccess ? 'success' : 'error');
+                    messageElement.show();
+                    setTimeout(() => messageElement.fadeOut(500), 5000);
+                }
+            }
+
+            function showUploadMessage(message, isSuccess = false) {
+                const messageElement = $('#upload-message');
+                if (messageElement.length) {
+                    messageElement.text(message);
+                    messageElement.removeClass('success error');
+                    messageElement.addClass(isSuccess ? 'success' : 'error');
+                    messageElement.show();
+                    setTimeout(() => messageElement.fadeOut(500), 5000);
+                }
+            }
+
+            // Verifica o estado de autenticação
+            auth.onAuthStateChanged((user) => {
+                if (user) {
+                    console.log('Usuário logado:', user.email);
+                    $('#login-container').hide();
+                    $('#main-app').show();
+                    $('#profile-email').text(user.email || 'Não informado');
+                    $('#profile-name').text(user.displayName || 'Usuário Anônimo');
+                    const photoURL = user.photoURL || 'https://via.placeholder.com/100?text=Sem+Foto';
+                    $('#profile-photo').attr('src', photoURL);
+                    populateChannels();
+                    const initialUrl = $('#channel-select option:first').val();
+                    if (initialUrl) loadStream(initialUrl);
+                    $('#user-icon').show(); // Mostra o ícone quando logado
+                } else {
+                    console.log('Nenhum usuário logado');
+                    $('#main-app').hide();
+                    $('#login-container').show();
+                    if (player) {
+                        console.log('Pausando o player ao deslogar');
+                        player.pause();
+                        if (playerInstance) {
+                            playerInstance.destroy();
+                            playerInstance = null;
+                        }
+                    }
+                    $('#profile-email').text('Carregando...');
+                    $('#profile-name').text('Carregando...');
+                    $('#profile-photo').attr('src', 'https://via.placeholder.com/100?text=Sem+Foto');
+                    $('#user-icon').hide(); // Esconde o ícone quando deslogado
+                    $('#profile-modal').hide(); // Fecha o modal ao deslogar
+                }
+            });
+
+            // Função de Login
+            $('#sign-in-btn').on('click', function() {
+                console.log('Botão Entrar clicado');
+                const email = $('#email').val().trim();
+                const password = $('#password').val().trim();
+                if (!email || !password) {
+                    showLoginMessage('Preencha todos os campos.');
+                    return;
+                }
+                auth.signInWithEmailAndPassword(email, password)
+                    .then((userCredential) => {
+                        showLoginMessage('Login feito com sucesso!', true);
+                        console.log('Usuário logado:', userCredential.user);
+                    })
+                    .catch((error) => {
+                        console.error('Erro no login:', error);
+                        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                            showLoginMessage('Email ou senha inválidos ou a conta não existe.');
+                        } else if (error.code === 'auth/invalid-email') {
+                            showLoginMessage('E-mail inválido. Verifique o formato do e-mail.');
+                        } else if (error.code === 'auth/too-many-requests') {
+                            showLoginMessage('Muitas tentativas. Tente novamente mais tarde.');
+                        } else {
+                            showLoginMessage('Erro ao fazer login: ' + error.message);
+                        }
+                    });
+            });
+
+            // Função de Cadastro
+            $('#sign-up-btn').on('click', function() {
+                console.log('Botão Cadastrar clicado');
+                const email = $('#email').val().trim();
+                const password = $('#password').val().trim();
+                if (!email || !password) {
+                    showLoginMessage('Preencha todos os campos.');
+                    return;
+                }
+                if (password.length < 6) {
+                    showLoginMessage('A senha deve ter pelo menos 6 caracteres.');
+                    return;
+                }
+                auth.createUserWithEmailAndPassword(email, password)
+                    .then((userCredential) => {
+                        showLoginMessage('Registrado com sucesso!', true);
+                        console.log('Usuário cadastrado:', userCredential.user);
+                    })
+                    .catch((error) => {
+                        console.error('Erro no cadastro:', error);
+                        if (error.code === 'auth/email-already-in-use') {
+                            showLoginMessage('Este e-mail já está registrado. Tente fazer login.');
+                        } else if (error.code === 'auth/invalid-email') {
+                            showLoginMessage('E-mail inválido. Verifique o formato do e-mail.');
+                        } else {
+                            showLoginMessage('Erro ao cadastrar: ' + error.message);
+                        }
+                    });
+            });
+
+            // Função de Logout
+            $('#sign-out-btn').on('click', function() {
+                console.log('Botão Sair clicado');
+                auth.signOut().then(() => {
+                    showLoginMessage('Usuário deslogado com sucesso!', true);
+                    console.log('Usuário deslogado');
+                    if (player) {
+                        console.log('Pausando o player no logout');
+                        player.pause();
+                        if (playerInstance) {
+                            playerInstance.destroy();
+                            playerInstance = null;
+                        }
+                    }
+                }).catch((error) => {
+                    showLoginMessage('Erro ao deslogar: ' + error.message);
+                    console.error('Erro ao deslogar:', error);
+                });
+            });
+
+            // Função para abrir/fechar o modal de perfil
+            $('#user-icon').on('click', function() {
+                if (auth.currentUser) {
+                    $('#profile-modal').show();
+                }
+            });
+
+            $('#close-modal').on('click', function() {
+                $('#profile-modal').hide();
+            });
+
+            // Função para upload de foto
+            $('#save-photo-btn').on('click', function() {
+                const fileInput = $('#upload-photo')[0];
+                if (fileInput.files && fileInput.files[0]) {
+                    const file = fileInput.files[0];
+                    const storageRef = storage.ref(`profile-photos/${auth.currentUser.uid}/${file.name}`);
+                    const uploadTask = storageRef.put(file);
+
+                    uploadTask.on('state_changed',
+                        (snapshot) => {
+                            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+                            console.log('Upload em progresso:', progress + '%');
+                        },
+                        (error) => {
+                            showUploadMessage('Erro ao fazer upload: ' + error.message);
+                            console.error('Erro no upload:', error);
+                        },
+                        () => {
+                            uploadTask.snapshot.ref.getDownloadURL().then((downloadURL) => {
+                                auth.currentUser.updateProfile({
+                                    photoURL: downloadURL
+                                }).then(() => {
+                                    $('#profile-photo').attr('src', downloadURL);
+                                    showUploadMessage('Foto de perfil atualizada com sucesso!', true);
+                                    console.log('Foto de perfil atualizada:', downloadURL);
+                                }).catch((error) => {
+                                    showUploadMessage('Erro ao atualizar foto: ' + error.message);
+                                    console.error('Erro ao atualizar foto:', error);
+                                });
+                            });
+                        }
+                    );
+                } else {
+                    showUploadMessage('Selecione uma imagem para fazer upload.');
+                }
+            });
+
+            function populateChannels(searchTerm = '') {
+                const select = $('#channel-select');
+                select.empty();
+
+                const categories = [...new Set(channels.map(channel => channel.category))];
+                categories.sort();
+
+                categories.forEach(category => {
+                    const filteredChannels = channels
+                        .filter(channel => channel.category === category)
+                        .filter(channel => channel.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+                    if (filteredChannels.length > 0) {
+                        select.append(`<optgroup label="${category}">`);
+                        filteredChannels.forEach(channel => {
+                            select.append(`<option value="${channel.url}">${channel.name}</option>`);
+                        });
+                        select.append(`</optgroup>`);
+                    }
+                });
+
+                if (select.children().length === 0) {
+                    select.append('<option disabled>Nenhum canal encontrado</option>');
+                }
+            }
+
+            function loadStream(url) {
+                console.log('Tentando carregar stream:', url);
+                $('.overlay-loading').show();
+
+                if (playerInstance) {
+                    playerInstance.destroy();
+                }
+
+                const videoElement = document.querySelector('#video_player_html5_api');
+                playerInstance = mpegts.createPlayer({
+                    type: 'flv',
+                    url: url
+                }, {
+                    isLive: true,
+                    lazyLoad: false,
+                    seekType: 'range',
+                    seekParamStart: 'bstart',
+                    seekParamEnd: 'bend',
+                    customSeekableRange: { start: 0, end: Infinity }
+                });
+
+                playerInstance.attachMediaElement(videoElement);
+                playerInstance.load();
+
+                player.on('playing', () => {
+                    console.log('Vídeo em reprodução, escondendo "Carregando"...');
+                    $('.overlay-loading').hide();
+                });
+
+                playerInstance.on(mpegts.Events.MEDIA_INFO, (mediaInfo) => {
+                    console.log('Informações de mídia:', mediaInfo);
+                });
+
+                playerInstance.on(mpegts.Events.LOADING_COMPLETE, () => {
+                    console.log('Stream bufferizado, iniciando reprodução.');
+                    player.play().then(() => {
+                        console.log('Reprodução iniciada.');
+                    }).catch(err => {
+                        console.error('Erro ao reproduzir:', err);
+                        showError('Erro ao reproduzir: ' + err.message);
+                    });
+                });
+
+                playerInstance.on(mpegts.Events.ERROR, (error) => {
+                    console.error('Erro no mpegts.js:', error);
+                    showError('Erro ao carregar o stream: ' + error.message);
+                });
+
+                setTimeout(() => {
+                    if ($('.overlay-loading').is(':visible')) {
+                        $('.overlay-loading').hide();
+                        showError('Tempo limite excedido ao carregar o stream.');
+                    }
+                }, 10000);
+            }
+
+            function showError(message) {
+                $('.overlay-loading').hide();
+                $('.overlay-error').text(message).show();
+                setTimeout(() => $('.overlay-error').hide(), 5000);
+            }
+
+            $('#search-bar').on('input', function() {
+                const searchTerm = $(this).val();
+                populateChannels(searchTerm);
+            });
+
+            $('.toggle-btn').on('click', function() {
+                $('.sidebar').toggleClass('collapsed');
+            });
+
+            $('#channel-select').on('change', function() {
+                const url = $(this).val();
+                loadStream(url);
+            });
+        });
+    </script>
+</body>
+</html>
